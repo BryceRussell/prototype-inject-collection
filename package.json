@@ -1,0 +1,20 @@
+{
+  "name": "root",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "lint": "biome check .",
+    "lint:fix": "biome check --apply ."
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.20.1",
+    "@biomejs/biome": "^1.5.3",
+    "@types/node": "^20.11.20",
+    "astro": "^4.4.4",
+    "ts-morph": "^21.0.1"
+  }
+}
