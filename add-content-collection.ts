@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AstroIntegration, HookParameters } from "astro";
 import { AstroError } from "astro/errors";
 import {
@@ -11,7 +12,6 @@ import {
 	SourceFile,
 	VariableDeclarationKind,
 } from "ts-morph";
-import { fileURLToPath } from "node:url";
 
 interface Option {
 	seedDir?: string;
@@ -22,8 +22,8 @@ interface Option {
 	type?: "content" | "data";
 	overwrite?: boolean;
 	call?: boolean;
-  config: HookParameters<'astro:config:setup'>["config"];
-	logger: HookParameters<'astro:config:setup'>["logger"];
+	config: HookParameters<"astro:config:setup">["config"];
+	logger: HookParameters<"astro:config:setup">["logger"];
 }
 
 export async function addContentCollection(option: Option) {
@@ -36,14 +36,13 @@ export async function addContentCollection(option: Option) {
 		overwrite,
 		type,
 		call,
-    config,
+		config,
 		logger,
 	} = option;
 
-  const srcDir = fileURLToPath(config.srcDir.toString())
-
 	let importName = exportName === "default" ? collection + suffix : exportName;
 
+	const srcDir = fileURLToPath(config.srcDir.toString());
 	const contentDir = resolve(srcDir, "content");
 	const contentConfig = resolve(srcDir, "content/config.ts");
 	const collectionDir = resolve(srcDir, "content/" + collection);
@@ -114,17 +113,20 @@ export async function addContentCollection(option: Option) {
 			declarations: [{ name: "collections", initializer: "{}" }],
 		});
 	}
-  
-  // If 'collections' statement does not have export declaration ('export { collections }') or export on variable statement, add export
-  if (!sourceFile.getExportedDeclarations().get('collections') && !collectionsStatement.isExported()) {
-    collectionsStatement.setIsExported(true);
-  }
 
-  // Is this needed?
-  // If 'collections' statement is not 'const' make it 'const'
-  // if (collectionsStatement.getDeclarationKind() !== "const") {
-  //   collectionsStatement.setDeclarationKind(VariableDeclarationKind.Const);
-  // }
+	// If 'collections' statement does not have export declaration ('export { collections }') or export on variable statement, add export
+	if (
+		!sourceFile.getExportedDeclarations().get("collections") &&
+		!collectionsStatement.isExported()
+	) {
+		collectionsStatement.setIsExported(true);
+	}
+
+	// Is this needed?
+	// If 'collections' statement is not 'const' make it 'const'
+	// if (collectionsStatement.getDeclarationKind() !== "const") {
+	//   collectionsStatement.setDeclarationKind(VariableDeclarationKind.Const);
+	// }
 
 	const collectionsDeclaration = collectionsStatement.getDeclarations()[0];
 
@@ -143,10 +145,10 @@ export async function addContentCollection(option: Option) {
 		name: collection,
 		func: "defineCollection",
 		arguments: [
-      `{ ` +
-        `${type === 'data' ? `type: 'data', ` : ''}` +
-        `schema: ${importName}${call?'()':''}` +
-      ` }`
+			`{ ` +
+				`${type === "data" ? `type: 'data', ` : ""}` +
+				`schema: ${importName}${call ? "()" : ""}` +
+				` }`,
 		],
 		overwrite,
 	});
@@ -206,7 +208,7 @@ function addImport(option: {
 }) {
 	const { sourceFile, moduleName, defaultImport } = option;
 
-  // Test if name of import is already being used inside file
+	// Test if name of import is already being used inside file
 	const isAvailable = isImportNameAvailable({
 		sourceFile,
 		moduleName,
@@ -223,7 +225,7 @@ function addImport(option: {
 				importName: `_${isAvailable.importName}`,
 			}),
 		);
-    // Update option with new importName/importAlias
+		// Update option with new importName/importAlias
 		if (!defaultImport || option.importAlias)
 			option.importAlias = isAvailable.importName;
 		else option.importName = isAvailable.importName;
@@ -310,6 +312,7 @@ function addFunctionCallToProperty(
 		return object;
 	}
 
+	// Todo, add ability to check module of property value, allow overwriting if it is equal to moduleName
 	if (!overwrite) return object;
 
 	// Check if property value is a function call, replace if not
