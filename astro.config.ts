@@ -8,28 +8,27 @@ export default defineConfig({
 		{
 			name: "add-schema-to-collection",
 			hooks: {
-				"astro:config:setup": async ({ config, logger }) => {
-					await addContentCollection({
-						srcDir: fileURLToPath(config.srcDir.toString()),
+				"astro:config:setup": ({ config, logger }) => {
+					
+					addContentCollection({
 						seedDir: resolve(fileURLToPath(config.root.toString()), "seed"),
 						moduleName: "@astrojs/starlight/schema",
 						exportName: "docsSchema",
 						collection: "docs",
-						call: true,
-						safe: false,
 						overwrite: true,
+						config,
 						logger,
 					});
 
-					// await addContentCollection({
-					// 	srcDir: fileURLToPath(config.srcDir.toString()),
-					// 	moduleName: "my-theme/collections",
-					// 	exportName: "default",
-					// 	collection: "blog",
-					// 	call: true,
-					// 	overwrite: true,
-					// 	logger,
-					// });
+					addContentCollection({
+						moduleName: "my-theme/collections",
+						exportName: "default",
+						collection: "blog",
+						overwrite: true,
+						config,	
+						logger,
+					});
+
 				},
 			},
 		},
