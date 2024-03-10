@@ -1,15 +1,14 @@
-import { existsSync } from "node:fs";
-import { cp, mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { existsSync, cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AstroIntegration, HookParameters } from "astro";
+import type { HookParameters } from "astro";
 import { AstroError } from "astro/errors";
 import {
-	CallExpression,
+	type CallExpression,
 	Node,
-	ObjectLiteralExpression,
+	type ObjectLiteralExpression,
 	Project,
-	SourceFile,
+	type SourceFile,
 	VariableDeclarationKind,
 } from "ts-morph";
 
@@ -21,55 +20,78 @@ interface Option {
 	suffix?: string;
 	type?: "content" | "data";
 	overwrite?: boolean;
-	call?: boolean;
 	config: HookParameters<"astro:config:setup">["config"];
 	logger: HookParameters<"astro:config:setup">["logger"];
 }
 
-export async function addContentCollection(option: Option) {
-	const {
-		seedDir,
-		moduleName,
-		exportName,
-		collection,
-		suffix = "Schema",
-		overwrite,
-		type,
-		call,
-		config,
-		logger,
-	} = option;
+// Validates/transforms strings into absolute directory path
+function stringToDir(base: string, path: string): string {
+	// Check if path is string
+	if (!path) {
+		throw new AstroError(`Invalid path!`, `"${path}"`);
+	}
+
+	// Check if path is a file URL
+	if (path.startsWith("file:/")) {
+		path = fileURLToPath(path);
+	}
+
+	// Check if path is relative
+	if (!isAbsolute(path)) {
+		path = resolve(base, path);
+	}
+
+	// Check if path is a file
+	if (extname(path)) {
+		path = dirname(path);
+	}
+
+	// Check if path exists
+	if (!existsSync(path)) {
+		throw new AstroError(`Path does not exist!`, `"${path}"`);
+	}
+
+	return path;
+}
+
+export function addContentCollection(option: Option) {
+	const { moduleName, exportName, collection, suffix = "Schema", overwrite = false, type, config, logger } = option;
+
+	let { seedDir } = option;
 
 	let importName = exportName === "default" ? collection + suffix : exportName;
 
+	const rootDir = fileURLToPath(config.root.toString());
 	const srcDir = fileURLToPath(config.srcDir.toString());
 	const contentDir = resolve(srcDir, "content");
 	const contentConfig = resolve(srcDir, "content/config.ts");
 	const collectionDir = resolve(srcDir, "content/" + collection);
 
+	if (seedDir) seedDir = stringToDir(rootDir, seedDir);
+
 	// If src directory does not exist, create one
 	if (!existsSync(srcDir)) {
-		await mkdir(srcDir);
+		mkdirSync(srcDir);
 	}
 
 	// If src/content directory does not exist, create one
 	if (!existsSync(contentDir)) {
-		await mkdir(contentDir);
+		mkdirSync(contentDir);
 	}
 
 	// If content collection config does not exist, create one
 	if (!existsSync(contentConfig)) {
-		await writeFile(contentConfig, "");
+		writeFileSync(contentConfig, "");
 	}
 
 	// If collection directory does not exist, create one
 	if (!existsSync(collectionDir)) {
-		await mkdir(collectionDir);
+		mkdirSync(collectionDir);
 
 		// If there is a seed directory, initialize collection directory with contents of seed directory
 		if (seedDir && existsSync(seedDir)) {
 			try {
-				await cp(seedDir, collectionDir, { recursive: true });
+				cpSync(seedDir, collectionDir, { recursive: true });
 			} catch {
 				// throw new AstroError(`Failed to seed '${collection}' collection`, seedDir)
 				logger.warn(`Failed to seed '${collection}' collection: ${seedDir}`);
@@ -115,47 +137,35 @@ export async function addContentCollection(option: Option) {
 	}
 
 	// If 'collections' statement does not have export declaration ('export { collections }') or export on variable statement, add export
-	if (
-		!sourceFile.getExportedDeclarations().get("collections") &&
-		!collectionsStatement.isExported()
-	) {
+	if (!sourceFile.getExportedDeclarations().get("collections") && !collectionsStatement.isExported()) {
 		collectionsStatement.setIsExported(true);
 	}
 
-	// Is this needed?
 	// If 'collections' statement is not 'const' make it 'const'
-	// if (collectionsStatement.getDeclarationKind() !== "const") {
-	//   collectionsStatement.setDeclarationKind(VariableDeclarationKind.Const);
-	// }
+	if (collectionsStatement.getDeclarationKind() !== "const") {
+		collectionsStatement.setDeclarationKind(VariableDeclarationKind.Const);
+	}
 
 	const collectionsDeclaration = collectionsStatement.getDeclarations()[0];
 
-	let collectionsObject = collectionsDeclaration.getInitializer();
+	let collectionsObject = collectionsDeclaration?.getInitializer();
 
 	// If 'collections' variable does not have a value or the value is not an object, make it an object
-	if (
-		!collectionsObject ||
-		!Node.isObjectLiteralExpression(collectionsObject)
-	) {
-		collectionsDeclaration.setInitializer("{}");
-		collectionsObject = collectionsDeclaration.getInitializer();
+	if (!collectionsObject || !Node.isObjectLiteralExpression(collectionsObject)) {
+		collectionsDeclaration!.setInitializer("{}");
+		collectionsObject = collectionsDeclaration!.getInitializer();
 	}
 
 	addFunctionCallToProperty(collectionsObject as ObjectLiteralExpression, {
 		name: collection,
 		func: "defineCollection",
-		arguments: [
-			`{ ` +
-				`${type === "data" ? `type: 'data', ` : ""}` +
-				`schema: ${importName}${call ? "()" : ""}` +
-				` }`,
-		],
+		arguments: [`{ ${type === "data" ? `type: 'data', ` : ""}` + `schema: ${importName}() }`],
 		overwrite,
 	});
 
 	sourceFile.organizeImports();
 
-	await sourceFile.save();
+	sourceFile.saveSync();
 }
 
 function isImportNameAvailable(option: {
@@ -164,30 +174,20 @@ function isImportNameAvailable(option: {
 	importName: string;
 }) {
 	const { sourceFile, moduleName, importName } = option;
-	// Is there a better way of doing this?
 
 	const isImport = sourceFile.getImportDeclarations().some((imprt) => {
-		if (imprt.getModuleSpecifier().getLiteralText() === moduleName)
-			return false;
+		if (imprt.getModuleSpecifier().getLiteralText() === moduleName) return false;
 
 		if (imprt.getDefaultImport()?.getText() === importName) return true;
 
 		return imprt
 			.getNamedImports()
-			.some(
-				(i) =>
-					i.getAliasNode()?.getText() === importName ||
-					i.getNameNode().getText() === importName,
-			);
+			.some((i) => i.getAliasNode()?.getText() === importName || i.getNameNode().getText() === importName);
 	});
 
-	const isVariable = sourceFile
-		.getVariableDeclarations()
-		.some((varible) => varible.getName() === importName);
+	const isVariable = sourceFile.getVariableDeclarations().some((varible) => varible.getName() === importName);
 
-	const isFunction = sourceFile
-		.getFunctions()
-		.some((func) => func.getName() === importName);
+	const isFunction = sourceFile.getFunctions().some((func) => func.getName() === importName);
 
 	return {
 		importName,
@@ -226,14 +226,16 @@ function addImport(option: {
 			}),
 		);
 		// Update option with new importName/importAlias
-		if (!defaultImport || option.importAlias)
-			option.importAlias = isAvailable.importName;
+		if (!defaultImport || option.importAlias) option.importAlias = isAvailable.importName;
 		else option.importName = isAvailable.importName;
 	}
 
 	const { importName, importAlias } = option;
 
 	const declaration = sourceFile.getImportDeclaration(moduleName);
+
+	// Remove namespace import (import * as something)
+	declaration?.removeNamespaceImport();
 
 	// Handle default imports on existing import declaration
 	if (declaration && defaultImport) {
@@ -251,9 +253,7 @@ function addImport(option: {
 	// Handle named imports on existing import declaration
 	if (declaration) {
 		// Find named import for 'importName'
-		const imprt = declaration
-			.getNamedImports()
-			.find((i) => i.getNameNode().getText() === importName);
+		const imprt = declaration.getNamedImports().find((i) => i.getNameNode().getText() === importName);
 		if (imprt) {
 			// If named import has an alias, rename or remove it
 			if (imprt.getAliasNode()?.getText() !== importAlias) {
@@ -267,7 +267,7 @@ function addImport(option: {
 			// If named import does not exist, add it
 			declaration.addNamedImport({
 				name: importName,
-				alias: importAlias,
+				alias: importAlias!,
 			});
 		}
 		return option;
@@ -278,7 +278,7 @@ function addImport(option: {
 		moduleSpecifier: moduleName,
 		...(defaultImport
 			? { defaultImport: importAlias || importName }
-			: { namedImports: [{ name: importName, alias: importAlias }] }),
+			: { namedImports: [{ name: importName, alias: importAlias! }] }),
 	});
 
 	return option;
@@ -299,9 +299,7 @@ function addFunctionCallToProperty(
 	const initializer = func + `(${options.arguments.join(", ")})`;
 
 	// Find property inside object
-	const property = object
-		.getProperties()
-		.find((prop) => prop.getFirstChild()?.getText() === name);
+	const property = object.getProperties().find((prop) => prop.getFirstChild()?.getText() === name);
 
 	// If property does not exist, add it and return early
 	if (!property) {
@@ -321,10 +319,7 @@ function addFunctionCallToProperty(
 	}
 
 	// Check if function name is correct, replace if not
-	if (
-		(property.getLastChild() as CallExpression).getExpression().getText() !==
-		func
-	) {
+	if ((property.getLastChild() as CallExpression).getExpression().getText() !== func) {
 		(property.getLastChild() as CallExpression).setExpression(func);
 	}
 
@@ -333,7 +328,7 @@ function addFunctionCallToProperty(
 	for (const [i, arg] of args.entries()) {
 		if (options.arguments[i]) {
 			if (arg.getText() !== options.arguments[i]) {
-				arg.replaceWithText(options.arguments[i]);
+				arg.replaceWithText(options.arguments[i]!);
 			}
 			continue;
 		} else {
