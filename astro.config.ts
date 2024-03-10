@@ -9,7 +9,6 @@ export default defineConfig({
 			name: "add-schema-to-collection",
 			hooks: {
 				"astro:config:setup": ({ config, logger }) => {
-					
 					addContentCollection({
 						seedDir: resolve(fileURLToPath(config.root.toString()), "seed"),
 						moduleName: "@astrojs/starlight/schema",
@@ -25,10 +24,9 @@ export default defineConfig({
 						exportName: "default",
 						collection: "blog",
 						overwrite: true,
-						config,	
+						config,
 						logger,
 					});
-
 				},
 			},
 		},
