@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@astrojs/starlight": "^0.20.1",
-    "@biomejs/biome": "^1.5.3",
-    "@types/node": "^20.11.20",
-    "astro": "^4.4.4",
+    "@biomejs/biome": "^1.6.0",
+    "@types/node": "^20.11.25",
+    "astro": "^4.4.15",
     "ts-morph": "^21.0.1"
   }
 }
